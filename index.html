@@ -2113,7 +2113,7 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
         return classHasOwnPack(c) ? 'gói riêng ' + c.questions.length + ' câu' : 'gói chung ' + state.questions.length + ' câu';
       }
       function total() { return curQuestions().length; }
-      function aliveIdx() { var r = []; state.game.eliminated.forEach(function (e, i) { if (!e) r.push(i); }); return r; }
+      function aliveIdx() { var r = []; var joined = (room && room.pin) ? roomJoinedSet() : null; state.game.eliminated.forEach(function (e, i) { if (!e && (!joined || joined[i])) r.push(i); }); return r; }
       function outIdx() { var r = []; state.game.eliminated.forEach(function (e, i) { if (e) r.push(i); }); return r; }
       function aliveCount() { return aliveIdx().length; }
       function ensureScores() {
@@ -2392,6 +2392,7 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
         if (g.phase === 'intro') {
           if (!total()) { toast('Chưa có câu hỏi nào — hãy bấm “Soạn đề” để thêm câu hỏi.'); return; }
           if (!state.students.length) { toast('Lớp đang chọn chưa có học sinh — hãy thêm học sinh trong “👥 Danh sách lớp” trước khi bắt đầu.'); return; }
+          if (room && room.pin && aliveCount() === 0) { toast('📱 Chưa có bạn nào vào phòng — đợi học sinh quét mã QR vào phòng rồi bấm bắt đầu.'); return; }
           if (state.settings.bgmOn) startBgm();
           if (total() === 1 || aliveCount() <= 1) enterGolden();
           else startQuestion(0, false);
@@ -2602,7 +2603,9 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
         }
         var alive = aliveIdx();
         var onlyOne = alive.length === 1 ? alive[0] : -1;
+        var joinedFloor = (room && room.pin) ? roomJoinedSet() : null;
         state.students.forEach(function (name, i) {
+          if (joinedFloor && !joinedFloor[i]) return;
           var b = document.createElement('button');
           b.className = 'cell' + (state.game.eliminated[i] ? ' out' : '') + (i === onlyOne ? ' lastone' : '');
           var num = document.createElement('span'); num.className = 'num'; num.textContent = i + 1;
@@ -2641,6 +2644,7 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
         var rows = state.students.map(function (name, i) {
           return { i: i, name: name, score: state.game.scores[i] || 0, out: !!state.game.eliminated[i] };
         });
+        if (room && room.pin) { var js = roomJoinedSet(); rows = rows.filter(function (r) { return js[r.i]; }); }
         rows.sort(function (a, b) {
           return (b.score - a.score) || ((a.out ? 1 : 0) - (b.out ? 1 : 0)) || (a.i - b.i);
         });
@@ -4502,6 +4506,16 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
       var room = { pin: null, stop: null, snap: null, qrKey: '' };
       function roomPath() { return '/rooms/' + room.pin; }
       function roomPlayers() { return (room.snap && room.snap.players) || {}; }
+      /* Chế độ phòng điện thoại: chỉ những em đã vào phòng (có bản ghi players với idx) mới tính là đang chơi. Em chưa vào phòng không có tên trên sàn, không được cộng điểm, không tính vào số em còn lại — danh sách lớp vẫn giữ nguyên cho chế độ chiếu offline. */
+      function roomJoinedSet() {
+        var s = {};
+        var players = roomPlayers();
+        Object.keys(players).forEach(function (pid) {
+          var p = players[pid];
+          if (p && typeof p.idx === 'number') s[p.idx] = true;
+        });
+        return s;
+      }
       function roomErr(e) { toast('📱 Lỗi kết nối phòng: ' + (e && e.message ? e.message : 'không rõ') + '. Kiểm tra mạng / cấu hình Firebase.'); }
       function roomCreate() {
         if (!fbReady()) { renderRoomPanel(); toast('Chưa có cấu hình Firebase — hãy mở “🔥 Cài đặt Firebase” và dán cấu hình của bạn trước.'); return; }
@@ -5093,7 +5107,7 @@ Chấp nhận các biến thể: “Câu 1.” hoặc chỉ “1.” thay cho �
       $('btnFbTest').addEventListener('click', function () {
         if (!fbReady()) { toast('Chưa có cấu hình nào được lưu để kiểm tra.'); return; }
         toast('🔌 Đang kiểm tra kết nối Firebase…');
-        fbGet('/rooms/__ping__').then(function () {
+        fbGet('/.info/connected').then(function () {
           toast('✅ Kết nối Firebase OK — tạo phòng điện thoại được rồi!');
         }).catch(function (e) {
           toast('❌ Chưa kết nối được (' + (e && e.message ? e.message : 'lỗi mạng') + '). Kiểm tra lại databaseURL và mạng.');
